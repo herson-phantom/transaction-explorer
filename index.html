@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Transaction Explorer</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #0d0e0f; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif; min-height: 100vh; display: flex; justify-content: center; padding: 32px 16px 64px; }
+    .app { background: #111213; border-radius: 20px; overflow: hidden; width: 100%; max-width: 420px; min-height: 600px; }
+    .topbar { display: flex; align-items: center; gap: 12px; padding: 16px 20px; border-bottom: 0.5px solid #242424; }
+    .back-btn { background: none; border: none; color: #5b9cf6; font-size: 14px; cursor: pointer; padding: 4px 0; display: none; align-items: center; gap: 4px; }
+    .back-btn.visible { display: flex; }
+    .topbar-title { font-size: 16px; font-weight: 500; color: #f0f0f0; }
+    .topbar-sub { font-size: 12px; color: #555; margin-top: 1px; }
+    .legend { display: flex; gap: 12px; padding: 10px 20px; border-bottom: 0.5px solid #1a1a1a; flex-wrap: wrap; }
+    .leg { display: flex; align-items: center; gap: 5px; font-size: 11px; color: #888; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .list { padding: 8px 0; }
+    .row { display: flex; align-items: center; gap: 14px; padding: 13px 20px; cursor: pointer; border-bottom: 0.5px solid #1a1a1a; transition: background 0.1s; }
+    .row:hover { background: #191a1b; }
+    .row:last-child { border-bottom: none; }
+    .av { width: 44px; height: 44px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .row-info { flex: 1; min-width: 0; }
+    .row-name { font-size: 15px; color: #f0f0f0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .row-sub { font-size: 12px; color: #555; margin-top: 2px; }
+    .row-amount { font-size: 15px; white-space: nowrap; }
+    .chevron { color: #444; font-size: 16px; margin-left: 4px; }
+    .state-bar { display: flex; gap: 6px; padding: 12px 20px; border-bottom: 0.5px solid #1a1a1a; overflow-x: auto; scrollbar-width: none; }
+    .state-bar::-webkit-scrollbar { display: none; }
+    .pill { padding: 6px 14px; border-radius: 20px; font-size: 12px; font-weight: 500; cursor: pointer; white-space: nowrap; border: 1.5px solid; transition: all 0.12s; outline: none; }
+    .pill-all { background: #222; color: #aaa; border-color: #333; }
+    .pill-all:hover { background: #2a2a2a; color: #ccc; border-color: #444; }
+    .pill-all.active { background: #333; color: #f0f0f0; border-color: #666; }
+    .pill-moneyin { background: #0e2018; color: #4caf7d; border-color: #1a3526; }
+    .pill-moneyin:hover { background: #132a1e; color: #5ec98a; border-color: #255c3a; }
+    .pill-moneyin.active { background: #1a3d28; color: #6ddb99; border-color: #4caf7d; }
+    .pill-moneyout { background: #1a1228; color: #9b8ff5; border-color: #2a1e42; }
+    .pill-moneyout:hover { background: #221630; color: #ab9ff7; border-color: #3a2a58; }
+    .pill-moneyout.active { background: #2a1c3e; color: #bfb0ff; border-color: #9b8ff5; }
+    .pill-pending { background: #201c08; color: #c8a84b; border-color: #352e10; }
+    .pill-pending:hover { background: #2a2408; color: #d4b455; border-color: #554a18; }
+    .pill-pending.active { background: #352c0a; color: #e0c060; border-color: #c8a84b; }
+    .pill-declined { background: #200c0c; color: #d95c5c; border-color: #361414; }
+    .pill-declined:hover { background: #2a1010; color: #e56868; border-color: #562020; }
+    .pill-declined.active { background: #361212; color: #f07070; border-color: #d95c5c; }
+    .empty { padding: 40px 20px; text-align: center; color: #444; font-size: 14px; }
+    .cat-count { font-size: 11px; color: #555; background: #1c1c1c; padding: 2px 8px; border-radius: 10px; margin-left: auto; }
+  </style>
+</head>
+<body>
+<div class="app" id="app">
+  <div class="topbar">
+    <button class="back-btn" id="backBtn" onclick="goBack()">&#8592; Back</button>
+    <div>
+      <div class="topbar-title" id="topTitle">Transactions</div>
+      <div class="topbar-sub" id="topSub">Select a category</div>
+    </div>
+  </div>
+  <div class="legend">
+    <div class="leg"><div class="dot" style="background:#4caf7d;"></div>Money In</div>
+    <div class="leg"><div class="dot" style="background:#9b8ff5;"></div>Money Out</div>
+    <div class="leg"><div class="dot" style="background:#c8a84b;"></div>Pending</div>
+    <div class="leg"><div class="dot" style="background:#d95c5c;"></div>Declined</div>
+  </div>
+  <div id="stateBar" class="state-bar" style="display:none;"></div>
+  <div class="list" id="mainList"></div>
+</div>
+
+<script>
+const stateLabel = { moneyin:'Money In', moneyout:'Money Out', pending:'Pending', declined:'Declined', none:'No Amount' };
+const dotColor   = { moneyin:'#4caf7d', moneyout:'#9b8ff5', pending:'#c8a84b', declined:'#d95c5c', none:'#444' };
+const amountColor = { moneyin:'#4caf7d', moneyout:'#f0f0f0', declined:'#d95c5c', none:'#444' };
+
+const PHANTOM_SVG = `<svg width="40" height="40" viewBox="0 0 40 41" fill="none" xmlns="http://www.w3.org/2000/svg"><mask id="pm" style="mask-type:luminance" maskUnits="userSpaceOnUse" x="0" y="0" width="40" height="40"><path d="M0 20C0 8.95431 8.95431 0 20 0C31.0457 0 40 8.95431 40 20C40 31.0457 31.0457 40 20 40C8.95431 40 0 31.0457 0 20Z" fill="white"/></mask><g mask="url(#pm)"><rect width="40" height="40" fill="#F1FF52"/><path fill-rule="evenodd" clip-rule="evenodd" d="M17.3802 27.8511C16.3098 28.7259 14.8765 29.4853 13.1294 29.4853C12.3605 29.4853 11.247 29.3344 10.3251 28.5107C9.36118 27.6495 9 26.4131 9 25.0972C9 21.8715 11.0941 18.2452 13.7266 15.5477C16.3851 12.8237 20.1224 10.5 24.013 10.5C26.2991 10.5 28.1472 11.3179 29.3823 12.8132C30.5665 14.2469 30.9955 16.0704 30.9955 17.7791C30.9955 19.9706 30.2979 22.2496 29.2576 24.0095C28.734 24.8954 28.079 25.7257 27.3014 26.3559C26.5302 26.9809 25.5169 27.5022 24.3331 27.5022C23.9067 27.5022 23.4387 27.4315 22.9907 27.2397C22.9471 27.273 22.9032 27.3058 22.8591 27.3381C21.9904 27.9735 20.842 28.5217 19.5593 28.5217C18.7947 28.5217 18.024 28.321 17.3802 27.8511ZM16.1962 26.2348C16.6588 25.8451 17.0733 25.3978 17.4368 24.9436C17.7153 24.5956 17.9639 24.2435 18.1815 23.9101C18.0562 24.2592 17.9866 24.6084 17.9866 24.9436C17.9866 25.6207 18.2721 26.1547 18.8374 26.3904C19.0416 26.4755 19.2824 26.5217 19.5593 26.5217C20.2222 26.5217 20.906 26.2529 21.528 25.83C22.068 25.4628 22.5615 24.9794 22.9544 24.4548C23.0875 24.277 23.2091 24.0944 23.3171 23.9101C23.2614 24.1056 23.2336 24.2872 23.2336 24.4548C23.2336 25.0972 23.5954 25.5022 24.3331 25.5022C24.4515 25.5022 24.57 25.4915 24.6883 25.4707C26.8896 25.0836 28.9955 21.1986 28.9955 17.7791C28.9955 14.972 27.5759 12.5 24.013 12.5C17.75 12.5 11 20.1533 11 25.0972C11 27.0384 12.0438 27.4853 13.1294 27.4853C14.3075 27.4853 15.3353 26.9598 16.1962 26.2348Z" fill="#171523"/><path fill-rule="evenodd" clip-rule="evenodd" d="M22.255 18.8345C21.585 18.8345 21.005 18.3345 21.005 17.3345C21.005 16.3345 21.585 15.8345 22.255 15.8345C22.915 15.8345 23.505 16.3345 23.505 17.3345C23.505 18.3345 22.915 18.8345 22.255 18.8345ZM25.875 18.8345C25.205 18.8345 24.625 18.3345 24.625 17.3345C24.625 16.3345 25.205 15.8345 25.875 15.8345C26.535 15.8345 27.125 16.3345 27.125 17.3345C27.125 18.3345 26.535 18.8345 25.875 18.8345Z" fill="#171523"/></g></svg>`;
+
+const BANK_SVG = `<svg width="40" height="40" viewBox="0 0 40 41" fill="none" xmlns="http://www.w3.org/2000/svg"><mask id="bm" style="mask-type:luminance" maskUnits="userSpaceOnUse" x="0" y="0" width="40" height="40"><path d="M0 20C0 8.95431 8.95431 0 20 0C31.0457 0 40 8.95431 40 20C40 31.0457 31.0457 40 20 40C8.95431 40 0 31.0457 0 20Z" fill="white"/></mask><g mask="url(#bm)"><rect width="40" height="40" fill="black" fill-opacity="0.8"/><rect width="40" height="40" fill="url(#bg1)"/><path d="M18.9609 11.8614C19.6793 11.5961 20.4742 11.6158 21.1816 11.919L27.3936 14.5811L27.4863 14.626C27.9293 14.8718 28.1227 15.4179 27.9189 15.8936C27.715 16.3694 27.1858 16.6066 26.7021 16.4551L26.6064 16.419L20.3936 13.7569C20.1736 13.6627 19.9284 13.6511 19.7021 13.7217L19.6064 13.7569L13.3936 16.419C12.886 16.6364 12.2986 16.4011 12.0811 15.8936C11.8637 15.386 12.0989 14.7986 12.6064 14.5811L18.8184 11.919L18.9609 11.8614Z" fill="url(#bg2)"/><path d="M27 26C27.5523 26 28 26.4477 28 27C28 27.5523 27.5523 28 27 28H13C12.4477 28 12 27.5523 12 27C12 26.4477 12.4477 26 13 26H27Z" fill="url(#bg3)"/><path d="M14 23V19C14 18.4477 14.4477 18 15 18C15.5523 18 16 18.4477 16 19V23C16 23.5523 15.5523 24 15 24C14.4477 24 14 23.5523 14 23ZM19 23V17C19 16.4477 19.4477 16 20 16C20.5523 16 21 16.4477 21 17V23C21 23.5523 20.5523 24 20 24C19.4477 24 19 23.5523 19 23ZM24 23V19C24 18.4477 24.4477 18 25 18C25.5523 18 26 18.4477 26 19V23C26 23.5523 25.5523 24 25 24C24.4477 24 24 23.5523 24 23Z" fill="url(#bg4)"/></g><defs><linearGradient id="bg1" x1="20" y1="0" x2="20" y2="40" gradientUnits="userSpaceOnUse"><stop stop-color="white" stop-opacity="0.08"/><stop offset="1" stop-color="white" stop-opacity="0.06"/></linearGradient><linearGradient id="bg2" x1="20" y1="11.676" x2="20" y2="28" gradientUnits="userSpaceOnUse"><stop stop-color="#EEEEEE" stop-opacity="0.7"/><stop offset="1" stop-color="white" stop-opacity="0.5"/></linearGradient><linearGradient id="bg3" x1="20" y1="11.676" x2="20" y2="28" gradientUnits="userSpaceOnUse"><stop stop-color="#EEEEEE" stop-opacity="0.7"/><stop offset="1" stop-color="white" stop-opacity="0.5"/></linearGradient><linearGradient id="bg4" x1="20" y1="11.676" x2="20" y2="28" gradientUnits="userSpaceOnUse"><stop stop-color="#EEEEEE" stop-opacity="0.7"/><stop offset="1" stop-color="white" stop-opacity="0.5"/></linearGradient></defs></svg>`;
+
+const WALLET_SVG = `<svg width="40" height="40" viewBox="0 0 40 41" fill="none" xmlns="http://www.w3.org/2000/svg"><mask id="wm" style="mask-type:luminance" maskUnits="userSpaceOnUse" x="0" y="0" width="40" height="40"><path d="M0 20C0 8.954 8.954 0 20 0s20 8.954 20 20-8.954 20-20 20S0 31.046 0 20z" fill="white"/></mask><g mask="url(#wm)"><rect width="40" height="40" fill="black" fill-opacity="0.8"/><rect width="40" height="40" fill="url(#wg1)"/><path fill-rule="evenodd" clip-rule="evenodd" d="M15 13h10c1.105 0 2 .896 2 2h-3c-2.761 0-5 2.239-5 5s2.239 5 5 5h3c0 1.105-.895 2-2 2H15c-1.657 0-3-1.343-3-3v-8c0-1.657 1.343-3 3-3zm14 2.268V15c0-2.209-1.791-4-4-4H15c-2.761 0-5 2.239-5 5v8c0 2.761 2.239 5 5 5h10c2.209 0 4-1.791 4-4v-.268C29.597 24.386 30 23.74 30 23v-6c0-.74-.402-1.387-1-1.732zM28 23H24c-1.657 0-3-1.343-3-3s1.343-3 3-3h4v6z" fill="url(#wg2)"/></g><defs><linearGradient id="wg1" x1="20" y1="0" x2="20" y2="40" gradientUnits="userSpaceOnUse"><stop stop-color="white" stop-opacity="0.08"/><stop offset="1" stop-color="white" stop-opacity="0.06"/></linearGradient><linearGradient id="wg2" x1="20" y1="11" x2="20" y2="29" gradientUnits="userSpaceOnUse"><stop stop-color="#EEEEEE" stop-opacity="0.7"/><stop offset="1" stop-color="white" stop-opacity="0.5"/></linearGradient></defs></svg>`;
+const PERPS_IMG_SVG = `<svg width="40" height="40" viewBox="0 0 40 41" fill="none" xmlns="http://www.w3.org/2000/svg"><mask id="prm" style="mask-type:luminance" maskUnits="userSpaceOnUse" x="0" y="0" width="40" height="40"><path d="M0 20C0 8.954 8.954 0 20 0s20 8.954 20 20-8.954 20-20 20S0 31.046 0 20z" fill="white"/></mask><g mask="url(#prm)"><rect width="40" height="40" fill="black" fill-opacity="0.8"/><rect width="40" height="40" fill="url(#prg1)"/><path d="M28.4 20c0-1.74-1.41-3.15-3.15-3.15-.868 0-1.69.357-2.281.978l-.238.281-1.418 1.889 1.418 1.89c.595.793 1.528 1.261 2.519 1.261C26.989 23.15 28.4 21.74 28.4 20zm-16.8 0c0 1.74 1.41 3.15 3.15 3.15.99 0 1.924-.468 2.519-1.261L18.687 20l-1.418-1.889c-.595-.793-1.528-1.26-2.519-1.261C12.01 16.85 11.6 18.26 11.6 20zm18.9 0c0 2.899-2.351 5.25-5.25 5.25-1.652 0-3.207-.778-4.199-2.1L20 21.75l-1.051 1.4C17.957 24.472 16.402 25.25 14.75 25.25 11.851 25.25 9.5 22.899 9.5 20s2.351-5.25 5.25-5.25c1.653 0 3.208.779 4.199 2.1L20 18.25l1.051-1.4c.992-1.321 2.547-2.1 4.199-2.1 2.899 0 5.25 2.351 5.25 5.25z" fill="url(#prg2)"/></g><defs><linearGradient id="prg1" x1="20" y1="0" x2="20" y2="40" gradientUnits="userSpaceOnUse"><stop stop-color="white" stop-opacity="0.08"/><stop offset="1" stop-color="white" stop-opacity="0.06"/></linearGradient><linearGradient id="prg2" x1="20" y1="14.75" x2="20" y2="25.25" gradientUnits="userSpaceOnUse"><stop stop-color="#EEEEEE" stop-opacity="0.7"/><stop offset="1" stop-color="white" stop-opacity="0.5"/></linearGradient></defs></svg>`;
+const SWAP_BADGE_SVG = `<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path fill-rule="evenodd" clip-rule="evenodd" d="M9 0C13.971 0 18 4.029 18 9s-4.029 9-9 9S0 13.971 0 9 4.029 0 9 0zm4 9.5c-.276 0-.5.224-.5.5 0 .828-.672 1.5-1.5 1.5H6.707l1.146-1.146a.5.5 0 0 0-.707-.707l-2 2a.5.5 0 0 0 0 .707l2 2a.5.5 0 0 0 .707-.707L6.707 12.5H11a2.5 2.5 0 0 0 2.5-2.5.5.5 0 0 0-.5-.5zm-3.146-6.354a.5.5 0 0 0-.708.707L10.293 5.5H7a2.5 2.5 0 0 0-2.5 2.5.5.5 0 0 0 1 0A1.5 1.5 0 0 1 7 6.5h3.293L9.146 7.646a.5.5 0 0 0 .708.707l2-2A.5.5 0 0 0 12 6a.5.5 0 0 0-.146-.354l-2-2z" fill="url(#sbg)"/><defs><linearGradient id="sbg" x1="9" y1="0" x2="9" y2="18" gradientUnits="userSpaceOnUse"><stop stop-color="#B6AAFE" stop-opacity="0.9"/><stop offset="1" stop-color="#B6AAFE" stop-opacity="0.86"/></linearGradient></defs></svg>`;
+const PERPS_BADGE_SVG = `<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M6.375 7.426c.495 0 .962.232 1.26.629l.709.944-.709.945a1.575 1.575 0 0 1-1.26.63A1.575 1.575 0 0 1 4.8 9a1.575 1.575 0 0 1 1.575-1.574zm5.25 0A1.575 1.575 0 0 1 13.2 9a1.575 1.575 0 0 1-1.575 1.574c-.496 0-.963-.233-1.26-.63L9.656 9l.709-.945.119-.14a1.57 1.57 0 0 1 1.141-.489z" fill="url(#pbg1)"/><path fill-rule="evenodd" clip-rule="evenodd" d="M9 0C13.971 0 18 4.029 18 9s-4.029 9-9 9S0 13.971 0 9 4.029 0 9 0zm2.625 6.375c-.774 0-1.507.342-2.004.93L9.525 7.426 9 8.125l-.525-.7A2.625 2.625 0 0 0 6.375 6.375 2.625 2.625 0 0 0 3.75 9a2.625 2.625 0 0 0 2.625 2.625c.826 0 1.604-.389 2.1-1.05L9 9.875l.525.7c.496.661 1.274 1.05 2.1 1.05A2.625 2.625 0 0 0 14.25 9a2.625 2.625 0 0 0-2.625-2.625z" fill="url(#pbg2)"/><defs><linearGradient id="pbg1" x1="9" y1="0" x2="9" y2="18" gradientUnits="userSpaceOnUse"><stop stop-color="#B6AAFE" stop-opacity="0.9"/><stop offset="1" stop-color="#B6AAFE" stop-opacity="0.86"/></linearGradient><linearGradient id="pbg2" x1="9" y1="0" x2="9" y2="18" gradientUnits="userSpaceOnUse"><stop stop-color="#B6AAFE" stop-opacity="0.9"/><stop offset="1" stop-color="#B6AAFE" stop-opacity="0.86"/></linearGradient></defs></svg>`;
+const PRED_BADGE_SVG = `<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path fill-rule="evenodd" clip-rule="evenodd" d="M6.61 5.902C7.93 4.69 10.07 4.69 11.39 5.902c1.32 1.213 1.32 3.18 0 4.394C10.07 11.509 7.93 11.509 6.61 10.296 5.29 9.083 5.29 7.115 6.61 5.902zm1.77.048a.25.25 0 0 0-.46 0l-.18.407a.25.25 0 0 1-.133.136l-.407.18a.25.25 0 0 0 0 .461l.407.18a.25.25 0 0 1 .133.136l.18.407a.25.25 0 0 0 .46 0l.18-.407a.25.25 0 0 1 .134-.136l.407-.18a.25.25 0 0 0 0-.46l-.407-.18a.25.25 0 0 1-.134-.137L8.38 5.95z" fill="url(#pdbg1)"/><path fill-rule="evenodd" clip-rule="evenodd" d="M9 0C13.971 0 18 4.029 18 9s-4.029 9-9 9S0 13.971 0 9 4.029 0 9 0zm4.54 11.57a.75.75 0 0 0-1.014 0C10.691 13.487 7.31 13.487 5.224 11.57a.75.75 0 0 0-1.013 1.404c2.507 2.304 6.572 2.304 9.079 0a.75.75 0 0 0 .25-.537.75.75 0 0 0-.25-.537c-.19-.175-.19-.175 0 0h.25zm-1.386-6.37C10.413 3.6 7.588 3.6 5.847 5.2 4.105 6.801 4.105 9.397 5.847 10.998c1.742 1.6 4.566 1.599 6.308 0 1.74-1.597 1.74-4.197-.001-5.798z" fill="url(#pdbg2)"/><defs><linearGradient id="pdbg1" x1="9" y1="0" x2="9" y2="18" gradientUnits="userSpaceOnUse"><stop stop-color="#B6AAFE" stop-opacity="0.9"/><stop offset="1" stop-color="#B6AAFE" stop-opacity="0.86"/></linearGradient><linearGradient id="pdbg2" x1="9" y1="0" x2="9" y2="18" gradientUnits="userSpaceOnUse"><stop stop-color="#B6AAFE" stop-opacity="0.9"/><stop offset="1" stop-color="#B6AAFE" stop-opacity="0.86"/></linearGradient></defs></svg>`;
+const SOL_IMG = `<img src="data:image/png;base64,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" width="48" height="48" style="border-radius:50%;display:block;">`;
+const PRED_IMG = `<img src="data:image/png;base64,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" width="48" height="48" style="border-radius:50%;object-fit:cover;display:block;">`;
+
+const DOORDASH_SVG = `<div style="width:48px;height:48px;border-radius:50%;background:white;overflow:hidden;display:flex;align-items:center;justify-content:center;"><img src="data:image/png;base64,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" width="38" height="38" style="object-fit:contain;display:block;"/></div>`;
+
+function getAmtColor(state, amount) {
+  if (state === 'declined') return '#d95c5c';
+  if (state === 'none') return '#444';
+  if (amount && amount.startsWith('+')) return '#4caf7d';
+  return '#f0f0f0';
+}
+
+const data = {
+  categories: [
+    { id:'trading',   name:'Trading',               icon:'⇄', color:'#1a2030', iconColor:'#7c8cf8' },
+    { id:'onramps',   name:'On-Ramps',               icon:'↓', color:'#252010', iconColor:'#c8a84b' },
+    { id:'sending',   name:'Sending Cash',           icon:'↑', color:'#1a1228', iconColor:'#9b8ff5' },
+    { id:'receiving', name:'Receiving Cash',         icon:'↓', color:'#1a2a1e', iconColor:'#4caf7d' },
+    { id:'cards',     name:'Cards',                  icon:'▪', color:'#1c1a2e', iconColor:'#7c8cf8' },
+    { id:'staking',   name:'Staking',                icon:'⬡', color:'#1a1a1a', iconColor:'#888'    },
+    { id:'token',     name:'Token & Asset Actions',  icon:'⟳', color:'#1c1a2e', iconColor:'#7c8cf8' },
+    { id:'system',    name:'Account & System',       icon:'⚙', color:'#1a1a1a', iconColor:'#555'    },
+  ],
+  transactions: {
+
+    /* ── TRADING ── */
+    trading: [
+      { name:'Swapped',           sub:'Blockchain',   icon:'swap',       mockTitle:'Swapped SOL → USDC',          mockSub:'Swap',        states:[{ s:'pending', label:'Swapping',  amount:'-$100' }, { s:'moneyout', label:'Confirmed', amount:'-$100' }]},
+      { name:'Trade',             sub:'Perps',        icon:'perps',      mockTitle:'Opened BTC 4x Long',           mockSub:'Trade',       states:[{ s:'pending', label:'Pending',   amount:'-$100' }, { s:'moneyin',  label:'Profit',    amount:'+$100' }, { s:'moneyout', label:'Loss', amount:'-$100' }]},
+      { name:'Perps Order',       sub:'Cash / Perps', icon:'perps',      mockTitle:'BTC Limit Order',              mockSub:'Trade',       states:[{ s:'pending', label:'Pending',   amount:'-$100' }, { s:'moneyout', label:'Confirmed', amount:'-$100' }]},
+      { name:'Bought',            sub:'Predictions',  icon:'prediction', mockTitle:'Bought Yes — Will BTC hit $100k?', mockSub:'Trade',   states:[{ s:'pending', label:'Pending',   amount:'-$100' }, { s:'moneyout', label:'Confirmed', amount:'-$100' }]},
+      { name:'Sold',              sub:'Predictions',  icon:'prediction', mockTitle:'Sold Yes — Will BTC hit $100k?',   mockSub:'Trade',   states:[{ s:'pending', label:'Pending',   amount:'+$100' }, { s:'moneyin',  label:'Confirmed', amount:'+$100' }]},
+      { name:'Resolved Position', sub:'Predictions',  icon:'prediction', mockTitle:'Resolved — Will BTC hit $100k?',   mockSub:'Trade',   states:[{ s:'moneyin', label:'Won',       amount:'+$200' }, { s:'moneyout', label:'Lost',      amount:'-$100' }]},
+      { name:'Prediction Buy/Sell',sub:'Cash',        icon:'prediction', mockTitle:'Bought Yes — Maduro',          mockSub:'Trade',       states:[{ s:'pending', label:'Pending',   amount:'-$100' }, { s:'moneyout', label:'Bought',    amount:'-$100' }, { s:'moneyin',  label:'Sold', amount:'+$100' }]},
+      { name:'Bought NFT',        sub:'Blockchain',   icon:'wallet',     mockTitle:'Bought Mad Lad #4201',         mockSub:'NFT',         states:[{ s:'pending', label:'Pending',   amount:'-$500' }, { s:'moneyout', label:'Confirmed', amount:'-$500' }]},
+      { name:'Sold NFT',          sub:'Blockchain',   icon:'wallet',     mockTitle:'Sold Mad Lad #4201',           mockSub:'NFT',         states:[{ s:'pending', label:'Selling',   amount:'+$500' }, { s:'moneyin',  label:'Confirmed', amount:'+$500' }]},
+      { name:'Bid on NFT',        sub:'Blockchain',   icon:'wallet',     mockTitle:'Bid on Mad Lad #4201',         mockSub:'NFT',         states:[{ s:'pending', label:'Pending',   amount:'-$400' }, { s:'moneyout', label:'Confirmed', amount:'-$400' }]},
+    ],
+
+    /* ── ON-RAMPS ── */
+    onramps: [
+      { name:'Cash Deposit', sub:'Onramp', mockTitle:'Cash Deposit', mockSub:'Deposit', icon:'phantom', states:[{ s:'pending', label:'Pending',   amount:'+$100'  }, { s:'moneyin', label:'Confirmed', amount:'+$100'  }]},
+      { name:'Microdeposit', sub:'Cash',   mockTitle:'Microdeposit', mockSub:'Deposit', icon:'phantom', states:[{ s:'pending', label:'Pending',   amount:'+$0.01' }, { s:'moneyin', label:'Confirmed', amount:'+$0.01' }]},
+    ],
+
+    /* ── SENDING CASH ── */
+    sending: [
+      { name:'Sent to Bank',         sub:'Cash',        mockTitle:'To Chase Checking',       mockSub:'Transfer', icon:'bank', states:[{ s:'pending', label:'Sending',  amount:'-$100' }, { s:'moneyout', label:'Confirmed', amount:'-$100' }, { s:'declined', label:'Declined', amount:'-$100' }]},
+      { name:'Sent Crypto',          sub:'Cash',        icon:'wallet',     mockTitle:'Sent SOL',                mockSub:'Transfer', states:[{ s:'pending', label:'Sending',  amount:'-$100' }, { s:'moneyout', label:'Confirmed', amount:'-$100' }]},
+      { name:'Sent via Username',    sub:'Cash',        icon:'wallet',     mockTitle:'To @silveratlas',         mockSub:'Transfer', states:[{ s:'pending', label:'Sending',  amount:'-$100' }, { s:'moneyout', label:'Confirmed', amount:'-$100' }]},
+      { name:'Sent',                 sub:'Blockchain',  icon:'wallet',     mockTitle:'To 7diG...O5at',          mockSub:'Transfer', states:[{ s:'pending', label:'Sending',  amount:'-$100' }, { s:'moneyout', label:'Confirmed', amount:'-$100' }]},
+      { name:'Bridged',              sub:'Blockchain',  icon:'wallet',     mockTitle:'Bridged SOL → ETH',       mockSub:'Bridge',   states:[{ s:'pending', label:'Bridging', amount:'-$100' }, { s:'moneyout', label:'Confirmed', amount:'-$100' }]},
+      { name:'Card Transfer',        sub:'Cash',        icon:'wallet',     mockTitle:'Card Transfer',           mockSub:'Transfer', states:[{ s:'pending', label:'Pending',  amount:'-$100' }, { s:'moneyout', label:'Confirmed', amount:'-$100' }, { s:'declined', label:'Declined', amount:'-$100' }]},
+      { name:'Perps Funding (out)',  sub:'Cash / Perps',icon:'perps',      mockTitle:'To Perps Account',        mockSub:'Transfer', states:[{ s:'pending', label:'Pending',  amount:'-$100' }, { s:'moneyout', label:'Confirmed', amount:'-$100' }]},
+      { name:'Perps Withdrawal', sub:'Perps',        icon:'perps',      mockTitle:'Perps Withdrawal',            mockSub:'Withdrawal', states:[{ s:'pending', label:'Pending',  amount:'-$100' }, { s:'moneyout', label:'Confirmed', amount:'-$100' }, { s:'declined', label:'Failed',   amount:'-$100' }]},
+    ],
+
+    /* ── RECEIVING CASH ── */
+    receiving: [
+      { name:'Received from Bank',   sub:'Cash',        mockTitle:'From Chase Checking',     mockSub:'Transfer', icon:'bank', states:[{ s:'pending', label:'Pending',   amount:'+$100' }, { s:'moneyin', label:'Confirmed', amount:'+$100' }, { s:'declined', label:'Declined', amount:'+$100' }]},
+      { name:'Received Crypto',      sub:'Cash',        icon:'wallet',     mockTitle:'Received SOL',            mockSub:'Transfer', states:[{ s:'pending', label:'Pending',   amount:'+$100' }, { s:'moneyin', label:'Confirmed', amount:'+$100' }]},
+      { name:'Received via Username',sub:'Cash',        icon:'wallet',     mockTitle:'From @silveratlas',       mockSub:'Transfer', states:[{ s:'pending', label:'Pending',   amount:'+$100' }, { s:'moneyin', label:'Confirmed', amount:'+$100' }]},
+      { name:'Received',             sub:'Blockchain',  icon:'wallet',     mockTitle:'From 7diG...O5at',        mockSub:'Transfer', states:[{ s:'pending', label:'Pending',   amount:'+$100' }, { s:'moneyin', label:'Confirmed', amount:'+$100' }]},
+      { name:'Perps Funding (in)',   sub:'Cash / Perps',icon:'perps',      mockTitle:'From Perps Account',      mockSub:'Transfer', states:[{ s:'pending', label:'Pending',   amount:'+$100' }, { s:'moneyin', label:'Confirmed', amount:'+$100' }]},
+      { name:'Perps Deposit',        sub:'Perps',       icon:'perps',      mockTitle:'Perps Deposit',           mockSub:'Deposit',  states:[{ s:'pending', label:'Pending',   amount:'+$100' }, { s:'moneyin', label:'Confirmed', amount:'+$100' }, { s:'declined', label:'Failed',   amount:'+$100' }]},
+      { name:'Perps Bonus',          sub:'Perps',       icon:'perps',      mockTitle:'Perps Bonus',             mockSub:'Bonus',    states:[{ s:'moneyin', label:'Confirmed', amount:'+$10'  }]},
+    ],
+
+    /* ── CARDS ── */
+    cards: [
+      { name:'Card Purchase',   sub:'Cards', icon:'doordash', mockTitle:'DoorDash',          mockSub:'Purchase',  states:[{ s:'pending', label:'Pending',  amount:'-$46.50' }, { s:'pending',  label:'Hold',      amount:'-$46.50' }, { s:'moneyout', label:'Confirmed', amount:'-$46.50' }, { s:'declined', label:'Declined', amount:'-$46.50' }]},
+      { name:'Merchant Payment',sub:'Cash',  icon:'doordash', mockTitle:'Starbucks',         mockSub:'Purchase',  states:[{ s:'pending', label:'Pending',  amount:'-$30'    }, { s:'moneyout', label:'Confirmed', amount:'-$30'    }, { s:'declined', label:'Declined', amount:'-$30'    }]},
+      { name:'Refund',          sub:'Cards', icon:'doordash', mockTitle:'DoorDash Refund',   mockSub:'Refund',    states:[{ s:'pending', label:'Pending',  amount:'+$46.50' }, { s:'moneyin',  label:'Confirmed', amount:'+$46.50' }]},
+    ],
+
+    /* ── STAKING ── */
+    staking: [
+      { name:'Staked',           sub:'Blockchain', icon:'wallet', mockTitle:'Staked SOL',           mockSub:'Stake',   states:[{ s:'pending', label:'Staking',            amount:'-$100' }, { s:'moneyout', label:'Confirmed', amount:'-$100' }]},
+      { name:'Withdrew Stake',   sub:'Blockchain', icon:'wallet', mockTitle:'Withdrew Stake',       mockSub:'Stake',   states:[{ s:'pending', label:'Withdrawing Stake',  amount:'+$100' }, { s:'moneyin',  label:'Confirmed', amount:'+$100' }]},
+      { name:'Deactivated Stake',sub:'Blockchain', icon:'wallet', mockTitle:'Deactivated Stake',    mockSub:'Stake',   states:[{ s:'pending', label:'Deactivating Stake', amount:'—'     }, { s:'none',     label:'Confirmed', amount:'—'     }]},
+      { name:'Converting Stake', sub:'Blockchain', icon:'wallet', mockTitle:'Converting Stake',     mockSub:'Stake',   states:[{ s:'pending', label:'Converting Stake',   amount:'—'     }, { s:'none',     label:'Confirmed', amount:'—'     }]},
+    ],
+
+    /* ── TOKEN & ASSET ACTIONS ── */
+    token: [
+      { name:'Burned',              sub:'Blockchain', icon:'wallet', mockTitle:'Burned BONK',              mockSub:'Burn',     states:[{ s:'pending', label:'Burning',         amount:'-$50'  }, { s:'moneyout', label:'Confirmed', amount:'-$50'  }]},
+      { name:'Unwrapped',           sub:'Blockchain', icon:'swap',   mockTitle:'Unwrapped wSOL',           mockSub:'Unwrap',   states:[{ s:'pending', label:'Unwrapping SOL',  amount:'+$100' }, { s:'moneyin',  label:'Confirmed', amount:'+$100' }]},
+      { name:'Approved (token)',    sub:'Blockchain', icon:'wallet', mockTitle:'Approved USDC',            mockSub:'Approval', states:[{ s:'pending', label:'Pending',         amount:'—'     }, { s:'none',     label:'Confirmed', amount:'—'     }]},
+      { name:'Revoked (token)',     sub:'Blockchain', icon:'wallet', mockTitle:'Revoked USDC',             mockSub:'Revoke',   states:[{ s:'pending', label:'Pending',         amount:'—'     }, { s:'none',     label:'Revoked',   amount:'—'     }]},
+      { name:'Approved Collection', sub:'Blockchain', icon:'wallet', mockTitle:'Approved Mad Lads',        mockSub:'Approval', states:[{ s:'pending', label:'Pending',         amount:'—'     }, { s:'none',     label:'Confirmed', amount:'—'     }]},
+      { name:'Revoked Collection',  sub:'Blockchain', icon:'wallet', mockTitle:'Revoked Mad Lads',         mockSub:'Revoke',   states:[{ s:'pending', label:'Pending',         amount:'—'     }, { s:'none',     label:'Revoked',   amount:'—'     }]},
+      { name:'Listed NFT',          sub:'Blockchain', icon:'wallet', mockTitle:'Listed Mad Lad #4201',     mockSub:'NFT',      states:[{ s:'pending', label:'Listing',         amount:'$500'  }, { s:'none',     label:'Confirmed', amount:'$500'  }]},
+      { name:'Unlisted NFT',        sub:'Blockchain', icon:'wallet', mockTitle:'Unlisted Mad Lad #4201',   mockSub:'NFT',      states:[{ s:'pending', label:'Removing Listing',amount:'—'     }, { s:'none',     label:'Unlisted',  amount:'—'     }]},
+      { name:'Cancelled Bid',       sub:'Blockchain', icon:'wallet', mockTitle:'Cancelled Bid — Mad Lad',  mockSub:'NFT',      states:[{ s:'pending', label:'Cancelling',      amount:'—'     }, { s:'none',     label:'Cancelled', amount:'—'     }]},
+      { name:'Cancelled Order',     sub:'Blockchain', icon:'wallet', mockTitle:'Cancelled Order',          mockSub:'Order',    states:[{ s:'pending', label:'Cancelling',      amount:'—'     }, { s:'none',     label:'Cancelled', amount:'—'     }]},
+    ],
+
+    /* ── ACCOUNT & SYSTEM ── */
+    system: [
+      { name:'App Interaction',      sub:'Blockchain', icon:'wallet', mockTitle:'App Interaction',      mockSub:'Transaction', states:[{ s:'pending', label:'App Interaction', amount:'—' }, { s:'none', label:'Confirmed', amount:'—' }]},
+      { name:'Cancelled Transaction',sub:'Blockchain', icon:'wallet', mockTitle:'Cancelled Transaction',mockSub:'Transaction', states:[{ s:'pending', label:'Cancelling',      amount:'—' }, { s:'none', label:'Cancelled', amount:'—' }]},
+      { name:'KYC Update',           sub:'Cash',       icon:'phantom', mockTitle:'KYC Update',           mockSub:'Account',     states:[{ s:'pending', label:'Pending',         amount:'—' }, { s:'none', label:'Confirmed', amount:'—' }]},
+      { name:'Account Update',       sub:'Cash',       icon:'phantom', mockTitle:'Account Update',       mockSub:'Account',     states:[{ s:'none',    label:'Confirmed',       amount:'—' }]},
+      { name:'Card Locked',          sub:'Cash',       icon:'phantom', mockTitle:'Card Locked',          mockSub:'Card',        states:[{ s:'none',    label:'Locked',          amount:'—' }]},
+      { name:'Card Unlocked',        sub:'Cash',       icon:'phantom', mockTitle:'Card Unlocked',        mockSub:'Card',        states:[{ s:'none',    label:'Unlocked',        amount:'—' }]},
+      { name:'PIN Updated',          sub:'Cash',       icon:'phantom', mockTitle:'PIN Updated',          mockSub:'Card',        states:[{ s:'none',    label:'Confirmed',       amount:'—' }]},
+      { name:'Unknown',              sub:'Cash',       icon:'phantom', mockTitle:'Unknown Transaction',  mockSub:'Transaction', states:[{ s:'none',    label:'Unknown',         amount:'—' }]},
+    ],
+  }
+};
+
+let view='categories', activeCat=null, activeState=null, activeTxIdx=null;
+
+function render() {
+  const list  = document.getElementById('mainList');
+  const title = document.getElementById('topTitle');
+  const sub   = document.getElementById('topSub');
+  const back  = document.getElementById('backBtn');
+  const bar   = document.getElementById('stateBar');
+
+  if (view === 'categories') {
+    back.classList.remove('visible');
+    title.textContent = 'Transactions';
+    sub.textContent   = 'Select a category';
+    bar.style.display = 'none';
+    list.innerHTML = data.categories.map(cat => {
+      const txs = data.transactions[cat.id] || [];
+      return `<div class="row" onclick="selectCat('${cat.id}')">
+        <div class="av" style="background:${cat.color};">
+          <span style="font-size:20px;color:${cat.iconColor};">${cat.icon}</span>
+        </div>
+        <div class="row-info">
+          <div class="row-name">${cat.name}</div>
+          <div class="row-sub">${txs.length} transaction type${txs.length!==1?'s':''}</div>
+        </div>
+        <span class="cat-count">${txs.length}</span>
+        <span class="chevron">›</span>
+      </div>`;
+    }).join('');
+
+  } else if (view === 'transactions') {
+    const cat = data.categories.find(c => c.id === activeCat);
+    const txs = data.transactions[activeCat] || [];
+    back.classList.add('visible');
+    title.textContent = cat.name;
+    sub.textContent   = `${txs.length} transaction type${txs.length!==1?'s':''}`;
+
+    const allStates = [...new Set(txs.flatMap(t => t.states.map(s => s.s)).filter(s => s !== 'none'))];
+    bar.style.display = 'flex';
+    const pills = [{ key:'all', label:'All', cls:'pill-all' }, ...allStates.map(s => ({ key:s, label:stateLabel[s], cls:`pill-${s}` }))];
+    bar.innerHTML = pills.map(p => {
+      const isActive = (p.key==='all' && activeState===null) || (p.key===activeState);
+      return `<button class="pill ${p.cls}${isActive?' active':''}" onclick="selectState('${p.key}')">${p.label}</button>`;
+    }).join('');
+
+    const filtered = activeState ? txs.filter(t => t.states.some(s => s.s === activeState)) : txs;
+    list.innerHTML = filtered.length ? filtered.map(tx => {
+      const displayStates = activeState ? tx.states.filter(s => s.s === activeState) : tx.states;
+      const primary       = displayStates[0];
+      const uniqueTypes   = [...new Set(displayStates.map(s => s.s))];
+      const idx           = data.transactions[activeCat].indexOf(tx);
+      return `<div class="row" onclick="selectTxDetail('${activeCat}',${idx})">
+        <div style="display:flex;flex-direction:column;align-items:center;gap:4px;flex-shrink:0;width:10px;">
+          ${uniqueTypes.map(st => `<div class="dot" style="background:${dotColor[st]};"></div>`).join('')}
+        </div>
+        <div class="row-info">
+          <div class="row-name">${tx.name}</div>
+          <div class="row-sub">${tx.sub} · ${displayStates.map(st => st.label).join(', ')}</div>
+        </div>
+        <div class="row-amount" style="color:${getAmtColor(primary.s, primary.amount)};">${primary.amount}</div>
+        <span class="chevron">›</span>
+      </div>`;
+    }).join('') : '<div class="empty">No transactions in this state</div>';
+
+  } else if (view === 'detail') {
+    const tx = data.transactions[activeCat][activeTxIdx];
+    back.classList.add('visible');
+    title.textContent = tx.name;
+    sub.textContent   = tx.sub;
+    bar.style.display = 'none';
+    const dates = ['Jan 3','Feb 14','Mar 22','Apr 17','May 8','Jun 30'];
+    list.innerHTML = tx.states.map((st, i) => {
+      const date = dates[i % dates.length] + ', 2026';
+      const subText = st.s === 'pending' ? 'Pending' : `${tx.mockSub} · ${date}`;
+      function buildAvatar(tx) {
+        const wrap = (inner, badge='') =>
+          `<div style="position:relative;flex-shrink:0;width:48px;height:48px;">
+            <div style="width:48px;height:48px;border-radius:50%;overflow:hidden;">${inner}</div>
+            ${badge ? `<div style="position:absolute;bottom:-1px;right:-1px;width:20px;height:20px;border-radius:50%;border:2px solid #111213;overflow:hidden;display:flex;align-items:center;justify-content:center;">${badge}</div>` : ''}
+          </div>`;
+        if (tx.icon === 'phantom') return wrap(PHANTOM_SVG);
+        if (tx.icon === 'bank')    return wrap(BANK_SVG);
+        if (tx.icon === 'perps')   return wrap(PERPS_IMG_SVG, PERPS_BADGE_SVG);
+        if (tx.icon === 'swap')    return wrap(SOL_IMG, SWAP_BADGE_SVG);
+        if (tx.icon === 'prediction') return wrap(PRED_IMG, PRED_BADGE_SVG);
+        if (tx.icon === 'doordash')   return `<div style="position:relative;flex-shrink:0;width:48px;height:48px;">${DOORDASH_SVG}</div>`;
+        return wrap(WALLET_SVG);
+      }
+      const leftEl = buildAvatar(tx);
+      const isDeclined = st.s === 'declined';
+      const amtStyle = isDeclined
+        ? 'color:#606060;text-decoration:line-through;font-size:15px;'
+        : `color:${getAmtColor(st.s, st.amount)};font-size:15px;`;
+      const subHtml = isDeclined
+        ? `<span style="color:#d95c5c;">Declined</span> · <span>${dates[i % dates.length]}, 2026</span>`
+        : subText;
+      return `<div class="row" style="cursor:default;">
+        ${leftEl}
+        <div class="row-info">
+          <div class="row-name" style="font-size:15px;">${tx.mockTitle}</div>
+          <div class="row-sub">${subHtml}</div>
+        </div>
+        <div class="row-amount" style="${amtStyle}">${st.amount}</div>
+      </div>`;
+    }).join('');
+  }
+}
+
+function selectCat(id)           { activeCat=id; activeState=null; view='transactions'; render(); }
+function selectState(s)          { activeState=s==='all'?null:s; render(); }
+function selectTxDetail(cId,idx) { activeCat=cId; activeTxIdx=idx; view='detail'; render(); }
+function goBack() {
+  if (view==='detail') { view='transactions'; activeTxIdx=null; }
+  else                 { view='categories';   activeCat=null; activeState=null; }
+  render();
+}
+
+render();
+</script>
+</body>
+</html>
